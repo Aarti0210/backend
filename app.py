@@ -1,39 +1,43 @@
-import os
-import mysql.connector
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
+import mysql.connector
+import os
 
 app = Flask(__name__)
 CORS(app)
 bcrypt = Bcrypt(app)
 
-# --- MySQL Connection (Render + PlanetScale using Environment Variables) ---
-db = mysql.connector.connect(
-    host=os.environ.get("DB_HOST"),
-    user=os.environ.get("DB_USER"),
-    password=os.environ.get("DB_PASSWORD"),
-    database=os.environ.get("DB_NAME"),
-    port=int(os.environ.get("DB_PORT", 3306))
-)
+# MySQL connection with SSL required for PlanetScale
+import mysql.connector, os
+
+try:
+    db = mysql.connector.connect(
+        host=os.getenv("DB_HOST"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME"),
+        port=int(os.getenv("DB_PORT", 3306)),
+        ssl_ca="/etc/ssl/certs/ca-certificates.crt"
+    )
+    cursor = db.cursor(dictionary=True)
+    print("✅ Database connected!")
+except Exception as e:
+    print("❌ Database connection failed:", e)
+    db = None
+    cursor = None
+
 cursor = db.cursor(dictionary=True)
 
-@app.route('/')
-def home():
-    return "Flask API with PlanetScale on Render is running!"
-
-# ---------------- SIGN UP ----------------
 @app.route('/signup', methods=['POST'])
 def signup():
     data = request.get_json()
-    name = data['username']      # match DB column
+    name = data['username']
     email = data['email']
     password = data['password']
 
-    # Hash password
     hashed_pw = bcrypt.generate_password_hash(password).decode('utf-8')
 
-    # Insert user
     try:
         cursor.execute(
             "INSERT INTO users (name, email, password) VALUES (%s, %s, %s)",
@@ -44,7 +48,6 @@ def signup():
     except mysql.connector.IntegrityError:
         return jsonify({"error": "Email already exists"}), 400
 
-# ---------------- LOGIN ----------------
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -66,6 +69,5 @@ def login():
     else:
         return jsonify({"error": "Invalid credentials"}), 401
 
-if __name__ == "__main__":
-    # Render requires host=0.0.0.0
-    app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
